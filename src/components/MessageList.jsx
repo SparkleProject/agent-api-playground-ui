@@ -13,7 +13,7 @@ export default function MessageList({ messages, isLoading }) {
                                 'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
                                 msg.role === 'user'
                                     ? 'bg-secondary'
-                                    : 'bg-gradient-to-br from-orange-500 to-orange-600'
+                                    : 'bg-gradient-to-br from-blue-500 to-blue-600'
                             )}
                         >
                             {msg.role === 'user' ? (
@@ -38,7 +38,7 @@ export default function MessageList({ messages, isLoading }) {
                 {/* Loading Indicator */}
                 {isLoading && (
                     <div className="flex gap-4">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-orange-500 to-orange-600">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-600">
                             <Bot className="w-4 h-4 text-white" />
                         </div>
                         <div className="flex-1">

@@ -10,7 +10,7 @@ export default function WelcomeScreen() {
                 {/* Icon and Greeting */}
                 <div className="space-y-4">
                     <div className="flex items-center justify-center gap-3">
-                        <Sparkles className="w-8 h-8 text-orange-500" />
+                        <Sparkles className="w-8 h-8 text-primary" />
                         <h1 className="text-4xl font-light text-foreground tracking-tight">
                             {greeting}, {userName}
                         </h1>

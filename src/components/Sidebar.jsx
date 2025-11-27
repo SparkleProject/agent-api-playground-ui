@@ -7,7 +7,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
             {/* Sidebar */}
             <div
                 className={cn(
-                    'fixed left-0 top-0 h-full bg-[rgb(13,13,13)] border-r border-[rgb(var(--border))] transition-all duration-300 z-10',
+                    'fixed left-0 top-0 h-full bg-[rgb(15,23,42)] border-r border-[rgb(var(--border))] transition-all duration-300 z-10',
                     isOpen ? 'w-64' : 'w-16'
                 )}
             >

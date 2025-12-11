@@ -3,13 +3,17 @@ import Sidebar from './components/Sidebar';
 import WelcomeScreen from './components/WelcomeScreen';
 import ChatInput from './components/ChatInput';
 import MessageList from './components/MessageList';
+import WorkflowGraph from './components/WorkflowGraph';
 import { sendMessage } from './services/agentApi';
+import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import './index.css';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [workflow, setWorkflow] = useState(null);
+  const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
 
   const handleSendMessage = async (content, modelId) => {
     // Add user message
@@ -23,6 +27,12 @@ function App() {
       // Call API
       const response = await sendMessage(content, modelId);
       setMessages(prev => [...prev, response]);
+
+      // Check if response contains workflow data
+      if (response.workflow && response.workflow.length > 0) {
+        setWorkflow(response.workflow);
+        setWorkflowPanelOpen(true);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages(prev => [
@@ -41,6 +51,14 @@ function App() {
     setSidebarOpen(prev => !prev);
   };
 
+  const toggleWorkflowPanel = () => {
+    setWorkflowPanelOpen(prev => !prev);
+  };
+
+  const closeWorkflowPanel = () => {
+    setWorkflowPanelOpen(false);
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
@@ -48,22 +66,57 @@ function App() {
 
       {/* Main Content */}
       <div
-        className="flex-1 flex flex-col transition-all duration-300"
+        className="flex-1 flex transition-all duration-300"
         style={{ marginLeft: sidebarOpen ? '256px' : '64px' }}
       >
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {messages.length === 0 ? (
-            <WelcomeScreen />
-          ) : (
-            <MessageList messages={messages} isLoading={isLoading} />
-          )}
+        <div className={`flex flex-col overflow-hidden transition-all duration-300 ${workflowPanelOpen ? 'w-1/2' : 'w-full'}`}>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {messages.length === 0 ? (
+              <WelcomeScreen />
+            ) : (
+              <MessageList messages={messages} isLoading={isLoading} />
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="flex-shrink-0 p-6 border-t border-border/50">
+            <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
+          </div>
         </div>
 
-        {/* Input Area */}
-        <div className="flex-shrink-0 p-6 border-t border-border/50">
-          <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
-        </div>
+        {/* Workflow Panel */}
+        {workflowPanelOpen && (
+          <div className="w-1/2 border-l border-border/50 flex flex-col bg-background">
+            {/* Panel Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border/50">
+              <h2 className="text-lg font-semibold">Workflow Visualization</h2>
+              <button
+                onClick={closeWorkflowPanel}
+                className="p-1 hover:bg-secondary rounded transition-colors"
+                aria-label="Close workflow panel"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Workflow Graph */}
+            <div className="flex-1 overflow-hidden">
+              <WorkflowGraph workflow={workflow} />
+            </div>
+          </div>
+        )}
+
+        {/* Workflow Toggle Button (when panel is closed) */}
+        {workflow && !workflowPanelOpen && (
+          <button
+            onClick={toggleWorkflowPanel}
+            className="fixed right-4 bottom-24 bg-primary text-primary-foreground p-3 rounded-full shadow-lg hover:bg-primary/90 transition-colors"
+            aria-label="Show workflow panel"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -24,7 +24,8 @@ export const sendMessage = async (message, model) => {
 
         return {
             role: 'assistant',
-            content: data.response
+            content: data.response,
+            workflow: data.wave || null  // Extract workflow data if present
         };
     } catch (error) {
         console.error('Error in sendMessage:', error);

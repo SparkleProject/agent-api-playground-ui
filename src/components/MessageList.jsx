@@ -5,6 +5,27 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { cn } from '../lib/utils';
 
+// Helper function to detect if content is JSON and wrap it in a code block
+function preprocessContent(content) {
+    const trimmed = content.trim();
+
+    // Check if the content looks like JSON (starts with { or [)
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+        (trimmed.endsWith('}') || trimmed.endsWith(']'))) {
+        try {
+            // Try to parse as JSON
+            JSON.parse(trimmed);
+            // If successful, wrap in a code block
+            return '```json\n' + trimmed + '\n```';
+        } catch (e) {
+            // Not valid JSON, return original
+            return content;
+        }
+    }
+
+    return content;
+}
+
 export default function MessageList({ messages, isLoading }) {
     return (
         <div className="flex-1 overflow-y-auto">
@@ -49,11 +70,26 @@ export default function MessageList({ messages, isLoading }) {
 
                                                 if (!inline && (!language || language === 'json')) {
                                                     try {
+                                                        // Try to parse as JSON directly
                                                         const parsed = JSON.parse(codeString);
                                                         formattedCode = JSON.stringify(parsed, null, 2);
                                                         language = 'json';
                                                     } catch (e) {
-                                                        // Not valid JSON, use original
+                                                        // If direct parse fails, try unescaping first
+                                                        try {
+                                                            // Replace escaped newlines and other escape sequences
+                                                            const unescaped = codeString
+                                                                .replace(/\\n/g, '\n')
+                                                                .replace(/\\t/g, '\t')
+                                                                .replace(/\\r/g, '\r')
+                                                                .replace(/\\"/g, '"')
+                                                                .replace(/\\\\/g, '\\');
+                                                            const parsed = JSON.parse(unescaped);
+                                                            formattedCode = JSON.stringify(parsed, null, 2);
+                                                            language = 'json';
+                                                        } catch (e2) {
+                                                            // Not valid JSON, use original
+                                                        }
                                                     }
                                                 }
 
@@ -79,7 +115,7 @@ export default function MessageList({ messages, isLoading }) {
                                             }
                                         }}
                                     >
-                                        {msg.content}
+                                        {preprocessContent(msg.content)}
                                     </ReactMarkdown>
                                 )}
                             </div>

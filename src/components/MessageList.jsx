@@ -1,4 +1,6 @@
 import { Bot, User } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { cn } from '../lib/utils';
 
 export default function MessageList({ messages, isLoading }) {
@@ -28,8 +30,14 @@ export default function MessageList({ messages, isLoading }) {
                             <div className="text-sm font-semibold text-foreground mb-1">
                                 {msg.role === 'user' ? 'You' : 'AI Assistant'}
                             </div>
-                            <div className="text-foreground/90 whitespace-pre-wrap break-words">
-                                {msg.content}
+                            <div className="text-foreground/90 whitespace-pre-wrap break-words prose prose-invert max-w-none">
+                                {msg.role === 'user' ? (
+                                    msg.content
+                                ) : (
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {msg.content}
+                                    </ReactMarkdown>
+                                )}
                             </div>
                         </div>
                     </div>

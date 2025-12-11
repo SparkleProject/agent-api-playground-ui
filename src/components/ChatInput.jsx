@@ -1,10 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Plus, ChevronDown, Clock } from 'lucide-react';
+import { Send, Plus, ChevronDown, Clock, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { getModels } from '../services/agentApi';
 
 export default function ChatInput({ onSendMessage, disabled }) {
     const [message, setMessage] = useState('');
+    const [models, setModels] = useState([]);
+    const [selectedModel, setSelectedModel] = useState(null);
+    const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
     const textareaRef = useRef(null);
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const fetchModels = async () => {
+            try {
+                const data = await getModels();
+                setModels(data);
+                if (data.length > 0) {
+                    setSelectedModel(data[0]);
+                }
+            } catch (error) {
+                console.error('Failed to fetch models:', error);
+            }
+        };
+        fetchModels();
+    }, []);
 
     useEffect(() => {
         if (textareaRef.current) {
@@ -13,10 +33,21 @@ export default function ChatInput({ onSendMessage, disabled }) {
         }
     }, [message]);
 
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsModelDropdownOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const handleSubmit = (e) => {
         e.preventDefault();
         if (message.trim() && !disabled) {
-            onSendMessage(message);
+            onSendMessage(message, selectedModel?.id);
             setMessage('');
             if (textareaRef.current) {
                 textareaRef.current.style.height = 'auto';
@@ -34,7 +65,7 @@ export default function ChatInput({ onSendMessage, disabled }) {
     return (
         <div className="w-full max-w-3xl mx-auto">
             <form onSubmit={handleSubmit} className="relative">
-                <div className="relative bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+                <div className="relative bg-card border border-border rounded-2xl shadow-lg">
                     <textarea
                         ref={textareaRef}
                         value={message}
@@ -65,13 +96,47 @@ export default function ChatInput({ onSendMessage, disabled }) {
 
                         <div className="flex items-center gap-3">
                             {/* Model Selector */}
-                            <button
-                                type="button"
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
-                            >
-                                <span className="text-xs text-foreground">Sonnet 4.5</span>
-                                <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                            </button>
+                            <div className="relative" ref={dropdownRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
+                                >
+                                    <span className="text-xs text-foreground">
+                                        {selectedModel ? selectedModel.name : 'Loading...'}
+                                    </span>
+                                    <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                                </button>
+
+                                {/* Dropdown Menu */}
+                                {isModelDropdownOpen && (
+                                    <div className="absolute bottom-full mb-2 right-0 w-48 bg-popover border border-border rounded-lg shadow-xl overflow-hidden z-50">
+                                        <div className="p-1">
+                                            {models.map((model) => (
+                                                <button
+                                                    key={model.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedModel(model);
+                                                        setIsModelDropdownOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex items-center justify-between px-3 py-2 text-sm rounded-md transition-colors",
+                                                        selectedModel?.id === model.id
+                                                            ? "bg-secondary text-foreground"
+                                                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                                                    )}
+                                                >
+                                                    {model.name}
+                                                    {selectedModel?.id === model.id && (
+                                                        <Check className="w-3 h-3 text-primary" />
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Send Button */}
                             <button

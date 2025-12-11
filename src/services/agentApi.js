@@ -3,26 +3,58 @@
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const sendMessage = async (message) => {
-    // Simulate network delay
-    await delay(1500);
+export const sendMessage = async (message, model) => {
+    try {
+        const response = await fetch('/api/azure/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: model,
+                message: message
+            })
+        });
 
-    // Mock response
-    return {
-        role: 'assistant',
-        content: `This is a mock response to: "${message}". The actual API integration will replace this with real agent responses.`
-    };
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        return {
+            role: 'assistant',
+            content: data.response
+        };
+    } catch (error) {
+        console.error('Error in sendMessage:', error);
+        throw error;
+    }
 };
 
-// Future integration point for real API
+// Future integration point for real API - keeping for backward compatibility if needed, 
+// but pointing to sendMessage
 export const connectToAgentAPI = async (apiUrl, message) => {
-    // TODO: Replace with actual API call
-    // const response = await fetch(apiUrl, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ message })
-    // });
-    // return response.json();
+    return sendMessage(message, 'default-model');
+};
 
-    return sendMessage(message);
+export const getModels = async () => {
+    try {
+        const response = await fetch('/api/azure/models');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        // The backend returns an array of strings e.g. ["gpt-4", "gpt-3.5"]
+        // We need to map this to objects for the UI
+        return data.map(model => ({
+            id: model,
+            name: model
+        }));
+    } catch (error) {
+        console.error('Error fetching models:', error);
+        // Fallback to empty array or rethrow depending on desired behavior
+        // For now, returning empty array to prevent UI crash
+        return [];
+    }
 };

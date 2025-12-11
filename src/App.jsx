@@ -11,7 +11,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendMessage = async (content) => {
+  const handleSendMessage = async (content, modelId) => {
     // Add user message
     const userMessage = { role: 'user', content };
     setMessages(prev => [...prev, userMessage]);
@@ -21,7 +21,7 @@ function App() {
 
     try {
       // Call API
-      const response = await sendMessage(content);
+      const response = await sendMessage(content, modelId);
       setMessages(prev => [...prev, response]);
     } catch (error) {
       console.error('Error sending message:', error);

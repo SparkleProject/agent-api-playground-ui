@@ -45,8 +45,8 @@ body {
 }
 
 .prose :where(p):not(:where([class~="not-prose"] *)) {
-  margin-top: 1em;
-  margin-bottom: 1em;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
 }
 
 .prose :where(h1):not(:where([class~="not-prose"] *)) {
@@ -54,7 +54,7 @@ body {
   font-weight: 800;
   font-size: 2.25em;
   margin-top: 0;
-  margin-bottom: 0.8888889em;
+  margin-bottom: 0.3em;
   line-height: 1.1111111;
 }
 
@@ -62,37 +62,51 @@ body {
   color: rgb(var(--foreground));
   font-weight: 700;
   font-size: 1.5em;
-  margin-top: 2em;
-  margin-bottom: 1em;
+  margin-top: 0.8em;
+  margin-bottom: 0.3em;
   line-height: 1.3333333;
+  clear: both;
 }
 
 .prose :where(h3):not(:where([class~="not-prose"] *)) {
   color: rgb(var(--foreground));
   font-weight: 600;
   font-size: 1.25em;
-  margin-top: 1.6em;
-  margin-bottom: 0.6em;
+  margin-top: 0.6em;
+  margin-bottom: 0.2em;
   line-height: 1.6;
+  clear: both;
 }
 
 .prose :where(ul):not(:where([class~="not-prose"] *)) {
   list-style-type: disc;
-  margin-top: 1em;
-  margin-bottom: 1em;
+  list-style-position: outside;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
   padding-left: 1.625em;
 }
 
 .prose :where(ol):not(:where([class~="not-prose"] *)) {
   list-style-type: decimal;
-  margin-top: 1em;
-  margin-bottom: 1em;
+  list-style-position: outside;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
   padding-left: 1.625em;
 }
 
 .prose :where(li):not(:where([class~="not-prose"] *)) {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+  display: list-item;
+}
+
+.prose :where(li > *):not(:where([class~="not-prose"] *)) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.prose :where(li > * + *):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.1em;
 }
 
 .prose :where(code):not(:where([class~="not-prose"] *)) {

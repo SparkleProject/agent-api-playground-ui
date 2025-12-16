@@ -147,6 +147,16 @@ const evalValue = (rawExpr, context) => {
         return val ? String(val) : "";
     }
 
+    // Handle Built-in: ?size
+    if (expr.endsWith('?size')) {
+        const variable = expr.replace('?size', '').trim();
+        const val = resolveVariable(variable, context);
+        if (Array.isArray(val)) return val.length;
+        if (typeof val === 'object' && val !== null) return Object.keys(val).length;
+        if (typeof val === 'string') return val.length;
+        return 0;
+    }
+
     // Handle Built-in: ?has_content
     if (expr.endsWith('?has_content')) {
         const variable = expr.replace('?has_content', '').trim();

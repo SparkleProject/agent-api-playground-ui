@@ -24,6 +24,7 @@ export default function WorkflowSimulator({ workflow }) {
     const [currentInputs, setCurrentInputs] = useState({});
     const [isSimulatingApi, setIsSimulatingApi] = useState(false);
     const [currentStep, setCurrentStep] = useState(null);
+    const [debugLogs, setDebugLogs] = useState([]);
 
     // Initialize simulation
     useEffect(() => {
@@ -78,8 +79,14 @@ export default function WorkflowSimulator({ workflow }) {
 
             // Handle Control Flow Nodes (Decision, Loops) automatically
             if (node.type === 'decision') {
-                const condition = evaluateExpression(node.expression?.['en-US'] || node.expression, context);
-                const block = condition ? node.if_block : node.else_block;
+                const expr = node.expression?.['en-US'] || node.expression;
+                const result = evaluateExpression(expr, context);
+
+                setDebugLogs(prev => [...prev,
+                `[Decision] Expr: "${expr}" | Result: ${result} | Keys: ${Object.keys(context.api_responses).join(', ')}`
+                ]);
+
+                const block = result ? node.if_block : node.else_block;
 
                 if (block && block.length > 0) {
                     // Push block
@@ -95,13 +102,19 @@ export default function WorkflowSimulator({ workflow }) {
             }
 
             if (node.type === 'while_loop') {
-                const shouldEnter = evaluateExpression(node.expression?.['en-US'] || node.expression, context);
+                const expr = node.expression?.['en-US'] || node.expression;
+                const shouldEnter = evaluateExpression(expr, context);
+
+                setDebugLogs(prev => [...prev,
+                `[While] Expr: "${expr}" | Enter: ${shouldEnter}`
+                ]);
+
                 if (shouldEnter) {
                     const newFrame = {
                         nodes: node.actions || [],
                         index: 0,
                         type: 'loop_block',
-                        expression: node.expression?.['en-US'] || node.expression
+                        expression: expr
                     };
                     setExecutionStack([...executionStack, newFrame]);
                 } else {
@@ -149,6 +162,28 @@ export default function WorkflowSimulator({ workflow }) {
         setIsSimulatingApi(false);
     };
 
+    // Mock Response State
+    const [mockResponse, setMockResponse] = useState('{\n  "status": "success",\n  "data": "Mock Data"\n}');
+    const [apiNameInput, setApiNameInput] = useState('');
+
+    // Update mock response default and api name when stepping into API call
+    useEffect(() => {
+        if (currentStep?.type === 'api_call') {
+            const defaultMock = {
+                status: "success",
+                data: "Mock Data",
+                // specific hints for common fields could go here
+                found: true,
+                products: ["Speaker A", "Speaker B"]
+            };
+            setMockResponse(JSON.stringify(defaultMock, null, 2));
+
+            // Initialize variable name (prioritize 'response' field, fallback to sanitized api_name)
+            const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
+            setApiNameInput(rawName.replace(/\s+/g, '_').toLowerCase());
+        }
+    }, [currentStep]);
+
     const handleNext = async () => {
         if (!currentStep) return;
 
@@ -186,17 +221,26 @@ export default function WorkflowSimulator({ workflow }) {
         if (currentStep.type === 'api_call') {
             setIsSimulatingApi(true);
             // Mock API Delay
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 600));
 
-            // Mock Response storage
-            const apiName = currentStep.api_name || 'unknown_api';
-            const mockResponse = { status: 'success', data: 'Mocked API Data' };
+            // Parse response from editor
+            let parsedResponse;
+            try {
+                parsedResponse = JSON.parse(mockResponse);
+            } catch (e) {
+                alert("Invalid JSON in mock response editor!");
+                setIsSimulatingApi(false);
+                setHistory([...history]); // Revert
+                return;
+            }
+
+            const apiName = apiNameInput || 'unknown_api';
 
             setContext(prev => ({
                 ...prev,
                 api_responses: {
                     ...prev.api_responses,
-                    [apiName]: mockResponse
+                    [apiName]: parsedResponse
                 }
             }));
             setIsSimulatingApi(false);
@@ -397,23 +441,53 @@ export default function WorkflowSimulator({ workflow }) {
                 )}
 
                 {currentStep.type === 'api_call' && (
-                    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-border rounded-lg bg-secondary/20">
-                        <div className="text-green-400 mb-2 font-mono">{currentStep.api_name || 'API'}</div>
+                    <div className="flex flex-col gap-4 p-6 border-2 border-dashed border-border rounded-lg bg-secondary/20">
+                        <div className="flex items-center justify-between">
+                            <div className="flex flex-col flex-1 mr-4">
+                                <label className="text-[10px] text-muted-foreground font-mono mb-1">Response Variable Name:</label>
+                                <input
+                                    type="text"
+                                    value={apiNameInput}
+                                    onChange={(e) => setApiNameInput(e.target.value)}
+                                    className="bg-background border border-border rounded px-2 py-1 text-sm font-mono text-green-400 focus:outline-none focus:border-primary"
+                                />
+                                <div className="text-[10px] text-muted-foreground font-mono mt-1">
+                                    Access via: api_responses.{apiNameInput}
+                                </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground bg-background px-2 py-1 rounded border border-border h-fit">
+                                Mock Response Editor
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm text-foreground/80">Response JSON:</label>
+                            <textarea
+                                value={mockResponse}
+                                onChange={(e) => setMockResponse(e.target.value)}
+                                className="w-full h-48 font-mono text-xs bg-background border border-border rounded p-3 text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                                spellCheck="false"
+                            />
+                            <div className="text-xs text-muted-foreground">
+                                Edit this JSON to test different outcomes (e.g. decision branches).
+                            </div>
+                        </div>
+
                         {isSimulatingApi ? (
-                            <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-                                Calling API...
+                            <div className="flex items-center gap-2 text-muted-foreground animate-pulse mt-4">
+                                Executing...
                             </div>
                         ) : (
-                            <div className="text-sm text-center text-muted-foreground">
-                                Ready to execute API call.<br />
-                                <span className="text-xs opacity-70">(Mock execution)</span>
+                            <div className="text-sm text-center text-muted-foreground mt-2">
+                                Ready to execute.
                             </div>
                         )}
                     </div>
                 )}
             </div>
 
-            <div className="p-4 border-t border-border/50 flex justify-between">
+            {/* Footer Buttons */}
+            <div className="flex-shrink-0 p-4 border-t border-border/50 flex justify-between">
                 <button
                     onClick={handleBack}
                     disabled={history.length === 0 || isSimulatingApi}
@@ -432,6 +506,14 @@ export default function WorkflowSimulator({ workflow }) {
                         <>Next <ChevronRight className="w-4 h-4" /></>
                     )}
                 </button>
+            </div>
+
+            {/* Debug Logs Panel - Fixed height at bottom */}
+            <div className="flex-shrink-0 bg-black/90 text-green-400 font-mono text-[10px] p-2 h-32 overflow-auto border-t border-white/10">
+                <div className="font-bold border-b border-white/20 mb-1">Runtime Logs</div>
+                {debugLogs.map((log, i) => (
+                    <div key={i}>{log}</div>
+                ))}
             </div>
         </div>
     );

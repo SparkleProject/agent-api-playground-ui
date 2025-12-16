@@ -22,10 +22,27 @@ export const sendMessage = async (message, model) => {
 
         const data = await response.json();
 
+        let workflowData = data.wave || null;
+
+        // If workflow data isn't at the top level, try to parse it from the response text
+        if (!workflowData && data.response && typeof data.response === 'string') {
+            try {
+                // Check if the response looks like JSON containing a wave array
+                if (data.response.trim().startsWith('{') && data.response.includes('"wave"')) {
+                    const parsedResponse = JSON.parse(data.response);
+                    if (parsedResponse.wave && Array.isArray(parsedResponse.wave)) {
+                        workflowData = parsedResponse.wave;
+                    }
+                }
+            } catch (e) {
+                // Ignore parsing errors, it might just be regular text
+            }
+        }
+
         return {
             role: 'assistant',
             content: data.response,
-            workflow: data.wave || null  // Extract workflow data if present
+            workflow: workflowData
         };
     } catch (error) {
         console.error('Error in sendMessage:', error);

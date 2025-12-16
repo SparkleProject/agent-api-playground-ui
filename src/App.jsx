@@ -4,6 +4,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import ChatInput from './components/ChatInput';
 import MessageList from './components/MessageList';
 import WorkflowGraph from './components/WorkflowGraph';
+import WorkflowSimulator from './components/WorkflowSimulator';
 import { sendMessage } from './services/agentApi';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import './index.css';
@@ -14,6 +15,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [workflow, setWorkflow] = useState(null);
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('simulator'); // 'simulator' or 'graph'
 
   const handleSendMessage = async (content, modelId) => {
     // Add user message
@@ -88,21 +90,51 @@ function App() {
         {/* Workflow Panel */}
         {workflowPanelOpen && (
           <div className="w-1/2 border-l border-border/50 flex flex-col bg-background">
-            {/* Panel Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border/50">
-              <h2 className="text-lg font-semibold">Workflow Visualization</h2>
-              <button
-                onClick={closeWorkflowPanel}
-                className="p-1 hover:bg-secondary rounded transition-colors"
-                aria-label="Close workflow panel"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            {/* Panel Header with Tabs */}
+            <div className="border-b border-border/50">
+              <div className="flex items-center justify-between p-4 pb-0">
+                <h2 className="text-lg font-semibold">Workflow</h2>
+                <button
+                  onClick={closeWorkflowPanel}
+                  className="p-1 hover:bg-secondary rounded transition-colors"
+                  aria-label="Close workflow panel"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex gap-2 px-4 pt-3 pb-1">
+                <button
+                  onClick={() => setActiveTab('simulator')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all border-b-2 ${activeTab === 'simulator'
+                    ? 'bg-secondary text-foreground border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 border-transparent'
+                    }`}
+                >
+                  📝 Simulator
+                </button>
+                <button
+                  onClick={() => setActiveTab('graph')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all border-b-2 ${activeTab === 'graph'
+                    ? 'bg-secondary text-foreground border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 border-transparent'
+                    }`}
+                >
+                  📊 Graph
+                </button>
+              </div>
             </div>
 
-            {/* Workflow Graph */}
+            {/* Tab Content */}
             <div className="flex-1 overflow-hidden">
-              <WorkflowGraph workflow={workflow} />
+              {activeTab === 'simulator' ? (
+                <WorkflowSimulator workflow={workflow} />
+                // <div className="p-4">Simulator Disabled for Debugging</div>
+              ) : (
+                <WorkflowGraph workflow={workflow} />
+                // <div className="p-4">Graph Disabled for Debugging</div>
+              )}
             </div>
           </div>
         )}

@@ -169,41 +169,37 @@ export default function WorkflowSimulator({ workflow }) {
     const [isGeneratingMock, setIsGeneratingMock] = useState(false);
     const [hasGeneratedMock, setHasGeneratedMock] = useState({}); // Track generation per step ID to avoid loops
 
-    // Scan workflow for expressions using this API response
-    const findExpressionUsage = (nodes, varName) => {
-        for (const node of nodes) {
+    // Scan workflow for ALL expressions using this API response
+    const findAllExpressionUsages = (nodes, varName) => {
+        let expressions = new Set();
+
+        const scanNode = (node) => {
             // Check fields for expressions
             if (node.fields) {
                 for (const field of node.fields) {
                     if (field.attributes && field.attributes.options) {
                         const optionsExpr = field.attributes.options;
-                        // Look for ${...api_responses.varName...}
                         if (typeof optionsExpr === 'string' && optionsExpr.includes(`api_responses.${varName}`)) {
-                            return optionsExpr;
+                            expressions.add(optionsExpr);
                         }
                     }
                     if (field.attributes && field.attributes.label_expression) {
                         const labelExpr = field.attributes.label_expression;
-                        if (labelExpr.includes(`api_responses.${varName}`)) return labelExpr;
+                        if (labelExpr.includes(`api_responses.${varName}`)) {
+                            expressions.add(labelExpr);
+                        }
                     }
                 }
             }
 
             // Recurse
-            if (node.actions) {
-                const found = findExpressionUsage(node.actions, varName);
-                if (found) return found;
-            }
-            if (node.if_block) {
-                const found = findExpressionUsage(node.if_block, varName);
-                if (found) return found;
-            }
-            if (node.else_block) {
-                const found = findExpressionUsage(node.else_block, varName);
-                if (found) return found;
-            }
-        }
-        return null;
+            if (node.actions) node.actions.forEach(scanNode);
+            if (node.if_block) node.if_block.forEach(scanNode);
+            if (node.else_block) node.else_block.forEach(scanNode);
+        };
+
+        nodes.forEach(scanNode);
+        return Array.from(expressions);
     };
 
     // Update mock response default and api name when stepping into API call
@@ -356,12 +352,12 @@ export default function WorkflowSimulator({ workflow }) {
         const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
         const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
 
-        const expression = findExpressionUsage(workflow, cleanName);
+        const expressions = findAllExpressionUsages(workflow, cleanName);
 
-        // If no expression found, we can still ask LLM to generate a generic mock for this API name
-        const prompt = expression
-            ? `create a json to match value of this freemarker expression: ${expression}`
-            : `create a realistic json response for an API named "${currentStep.api_name || 'unknown'}"`;
+        // Construct prompt with variable name and expression list
+        const prompt = expressions.length > 0
+            ? `Give a json example as the value of 'api_responses.${cleanName}' to match value of these freemarker expressions: ${JSON.stringify(expressions)}, return the json value only, do not include the key api_responses.${cleanName}`
+            : `create a realistic json response for an API named "${currentStep.api_name || 'unknown'}" (variable: api_responses.${cleanName})`;
 
         const logPayload = { model: 'gpt-4.1-mini', message: prompt };
         setDebugLogs(prev => [...prev, `[Mock Gen] Invoking Chat Endpoint. Payload: ${JSON.stringify(logPayload)}`]);

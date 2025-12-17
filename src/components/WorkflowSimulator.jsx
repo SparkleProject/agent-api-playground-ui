@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronRight, ChevronLeft, RotateCcw, Play } from 'lucide-react';
-import { evaluateExpression } from '../utils/expressionEngine';
+import { ChevronRight, ChevronLeft, RotateCcw, Play, Sparkles } from 'lucide-react';
+import { evaluateExpression, interpolateString } from '../utils/expressionEngine';
 import { ErrorBoundary } from './ErrorBoundary';
+import { sendMessage } from '../services/agentApi';
 
 export default function WorkflowSimulator({ workflow }) {
     // State for the simulation engine
@@ -165,27 +166,103 @@ export default function WorkflowSimulator({ workflow }) {
     // Mock Response State
     const [mockResponse, setMockResponse] = useState('{\n  "status": "success",\n  "data": "Mock Data"\n}');
     const [apiNameInput, setApiNameInput] = useState('');
+    const [isGeneratingMock, setIsGeneratingMock] = useState(false);
+    const [hasGeneratedMock, setHasGeneratedMock] = useState({}); // Track generation per step ID to avoid loops
 
-    // Update mock response default and api name when stepping into API call
+    // Scan workflow for expressions using this API response
+    const findExpressionUsage = (nodes, varName) => {
+        for (const node of nodes) {
+            // Check fields for expressions
+            if (node.fields) {
+                for (const field of node.fields) {
+                    if (field.attributes && field.attributes.options) {
+                        const optionsExpr = field.attributes.options;
+                        // Look for ${...api_responses.varName...}
+                        if (typeof optionsExpr === 'string' && optionsExpr.includes(`api_responses.${varName}`)) {
+                            return optionsExpr;
+                        }
+                    }
+                    if (field.attributes && field.attributes.label_expression) {
+                        const labelExpr = field.attributes.label_expression;
+                        if (labelExpr.includes(`api_responses.${varName}`)) return labelExpr;
+                    }
+                }
+            }
+
+            // Recurse
+            if (node.actions) {
+                const found = findExpressionUsage(node.actions, varName);
+                if (found) return found;
+            }
+            if (node.if_block) {
+                const found = findExpressionUsage(node.if_block, varName);
+                if (found) return found;
+            }
+            if (node.else_block) {
+                const found = findExpressionUsage(node.else_block, varName);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
     // Update mock response default and api name when stepping into API call
     // AND Re-hydrate inputs if we have visited this step before (e.g. Back button)
     useEffect(() => {
         if (!currentStep) return;
 
         if (currentStep.type === 'api_call') {
-            const defaultMock = {
-                status: "success",
-                data: "Mock Data",
-                // specific hints for common fields could go here
-                found: true,
-                products: ["Speaker A", "Speaker B"]
-            };
-            setMockResponse(JSON.stringify(defaultMock, null, 2));
-
-            // Initialize variable name (prioritize 'response' field, fallback to sanitized api_name)
             const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
-            setApiNameInput(rawName.replace(/\s+/g, '_').toLowerCase());
+            const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
+            setApiNameInput(cleanName);
+
+            // Smart Mocking: If we haven't generated for this step yet, try to find usage and generate
+            if (!hasGeneratedMock[currentStep.id]) {
+                const expression = findExpressionUsage(workflow, cleanName);
+
+                if (expression) {
+                    setIsGeneratingMock(true);
+                    setHasGeneratedMock(prev => ({ ...prev, [currentStep.id]: true }));
+
+                    // Call LLM to generate mock
+                    sendMessage(
+                        `create a json to match value of this freemarker expression: ${expression}`,
+                        'gpt-4.1-mini'
+                    ).then(response => {
+                        let json = response.content;
+                        // Extract JSON from code block if present
+                        if (json.includes('```json')) {
+                            json = json.split('```json')[1].split('```')[0].trim();
+                        } else if (json.includes('```')) {
+                            json = json.split('```')[1].split('```')[0].trim();
+                        }
+
+                        setMockResponse(json);
+                        setIsGeneratingMock(false);
+                    }).catch(err => {
+                        console.error("Failed to generate mock:", err);
+                        setIsGeneratingMock(false);
+                        // Fallback to default
+                        setMockResponse(JSON.stringify({ status: "error", message: "Failed to generate mock" }, null, 2));
+                    });
+                } else {
+                    // Default fallback if no expression usage found
+                    const defaultMock = {
+                        status: "success",
+                        data: "Mock Data",
+                        found: true,
+                        products: ["Speaker A", "Speaker B"]
+                    };
+                    setMockResponse(JSON.stringify(defaultMock, null, 2));
+                }
+            }
+            // If already generated or visited, we keep the current mockResponse (or it might have been reset? 
+            // Wait, mockResponse state is preserved as long as we don't unmount? 
+            // No, WorkflowSimulator stays mounted. But mockResponse is state.
+            // If we have multiple API steps, it overwrites.
+            // That's acceptable for now. 
         }
+
 
         if (currentStep.type === 'user_interaction' && currentStep.fields) {
             const restoredInputs = {};
@@ -484,7 +561,7 @@ export default function WorkflowSimulator({ workflow }) {
                         <div className="mb-6 prose prose-invert max-w-none prose-headings:text-lg prose-p:text-sm">
                             <ErrorBoundary fallback={<div className="text-red-400">Error rendering prompt</div>}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {extractPrompt(currentStep.prompt) || ''}
+                                    {interpolateString(extractPrompt(currentStep.prompt), context) || ''}
                                 </ReactMarkdown>
                             </ErrorBoundary>
                         </div>
@@ -512,17 +589,22 @@ export default function WorkflowSimulator({ workflow }) {
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-sm text-foreground/80">Response JSON:</label>
-                            <textarea
-                                value={mockResponse}
-                                onChange={(e) => setMockResponse(e.target.value)}
-                                className="w-full h-48 font-mono text-xs bg-background border border-border rounded p-3 text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                                spellCheck="false"
-                            />
-                            <div className="text-xs text-muted-foreground">
-                                Edit this JSON to test different outcomes (e.g. decision branches).
-                            </div>
+                        <div className="text-xs text-muted-foreground mb-2 flex items-center justify-between">
+                            <span>Edit JSON response to simulate different scenarios:</span>
+                            {isGeneratingMock && (
+                                <span className="flex items-center text-primary animate-pulse">
+                                    <Sparkles className="w-3 h-3 mr-1" /> Generating smart mock...
+                                </span>
+                            )}
+                        </div>
+                        <textarea
+                            value={mockResponse}
+                            onChange={(e) => setMockResponse(e.target.value)}
+                            className="w-full h-48 bg-secondary/50 border border-border rounded font-mono text-xs p-2 focus:ring-1 focus:ring-primary outline-none resize-none"
+                            spellCheck="false"
+                        />
+                        <div className="text-xs text-muted-foreground">
+                            Edit this JSON to test different outcomes (e.g. decision branches).
                         </div>
 
                         {isSimulatingApi ? (

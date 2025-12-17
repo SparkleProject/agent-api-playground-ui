@@ -6,8 +6,21 @@
  * - Variables: replies.field_name, api_responses.api_name.field, now
  * - Operators: >, <, >=, <=, ==, !=, &&, ||, !
  * - Built-ins: ?string, ?then(trueVal, falseVal), ?? (exists)
- * - Types: string, number, boolean, date/time
+ * -// Types: string, number, boolean, date/time
  */
+
+// Interpolate a string containing ${...} expressions
+export const interpolateString = (text, context) => {
+    if (!text || typeof text !== 'string') return text;
+
+    // Pattern to match ${expression}
+    // We use a non-greedy match for the content inside brackets
+    return text.replace(/\$\{([^}]+)\}/g, (match, expr) => {
+        const result = evaluateExpression(expr, context);
+        // If result is null/undefined, return empty string (or original match if preferred, but empty is standard for templates)
+        return result !== null && result !== undefined ? String(result) : '';
+    });
+};
 
 export const evaluateExpression = (expression, context) => {
     if (!expression) return null;

@@ -93,12 +93,18 @@ const evalTernary = (expr, context) => {
 // Handle ==, !=
 const evalEquality = (expr, context) => {
     if (expr.includes('==')) {
-        const [left, right] = splitByTopLevel(expr, '==');
-        return evalComparison(left, context) == evalComparison(right, context);
+        const parts = splitByTopLevel(expr, '==');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalComparison(left, context) == evalComparison(right, context);
+        }
     }
     if (expr.includes('!=')) {
-        const [left, right] = splitByTopLevel(expr, '!=');
-        return evalComparison(left, context) != evalComparison(right, context);
+        const parts = splitByTopLevel(expr, '!=');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalComparison(left, context) != evalComparison(right, context);
+        }
     }
     return evalComparison(expr, context);
 };
@@ -107,20 +113,32 @@ const evalEquality = (expr, context) => {
 const evalComparison = (expr, context) => {
     // Check >=, <= first as they contain <, >
     if (expr.includes('>=')) {
-        const [left, right] = splitByTopLevel(expr, '>=');
-        return evalValue(left, context) >= evalValue(right, context);
+        const parts = splitByTopLevel(expr, '>=');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalValue(left, context) >= evalValue(right, context);
+        }
     }
     if (expr.includes('<=')) {
-        const [left, right] = splitByTopLevel(expr, '<=');
-        return evalValue(left, context) <= evalValue(right, context);
+        const parts = splitByTopLevel(expr, '<=');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalValue(left, context) <= evalValue(right, context);
+        }
     }
     if (expr.includes('>')) {
-        const [left, right] = splitByTopLevel(expr, '>');
-        return evalValue(left, context) > evalValue(right, context);
+        const parts = splitByTopLevel(expr, '>');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalValue(left, context) > evalValue(right, context);
+        }
     }
     if (expr.includes('<')) {
-        const [left, right] = splitByTopLevel(expr, '<');
-        return evalValue(left, context) < evalValue(right, context);
+        const parts = splitByTopLevel(expr, '<');
+        if (parts.length > 1) {
+            const [left, right] = parts;
+            return evalValue(left, context) < evalValue(right, context);
+        }
     }
     return evalValue(expr, context);
 };
@@ -134,46 +152,132 @@ const evalValue = (rawExpr, context) => {
         return evalLogical(expr.substring(1, expr.length - 1), context);
     }
 
+    // Handle Object Literal { k: v, ... }
+    if (expr.startsWith('{') && expr.endsWith('}')) {
+        const content = expr.substring(1, expr.length - 1);
+        const properties = splitByTopLevel(content, ',');
+        const obj = {};
+        for (const prop of properties) {
+            if (prop.includes(':')) {
+                // simple split by first colon
+                const colonIdx = prop.indexOf(':');
+                const keyStr = prop.substring(0, colonIdx).trim();
+                const valStr = prop.substring(colonIdx + 1).trim();
+
+                // Key can be quote or bare
+                let key = keyStr;
+                if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+                    key = key.substring(1, key.length - 1);
+                }
+
+                obj[key] = evaluateExpression(valStr, context);
+            }
+        }
+        return obj;
+    }
+
+    // Handle String Concatenation (+) - Check BEFORE built-ins like ?string
+    if (expr.includes('+')) {
+        // Simple split by + that respects quotes/nesting
+        const parts = splitByTopLevel(expr, '+');
+        if (parts.length > 1) {
+            return parts.reduce((acc, part) => {
+                const val = evalValue(part, context);
+                return acc + (val === null || val === undefined ? '' : String(val));
+            }, '');
+        }
+    }
+
     // Handle Not (!)
     if (expr.startsWith('!')) {
         return !evalValue(expr.substring(1), context);
     }
 
-    // Handle Built-in: ?string
-    // Example: zonedDateTime?string
-    if (expr.endsWith('?string')) {
-        const variable = expr.replace('?string', '').trim();
-        const val = resolveVariable(variable, context);
-        return val ? String(val) : "";
-    }
-
-    // Handle Built-in: ?size
-    if (expr.endsWith('?size')) {
-        const variable = expr.replace('?size', '').trim();
-        const val = resolveVariable(variable, context);
-        if (Array.isArray(val)) return val.length;
-        if (typeof val === 'object' && val !== null) return Object.keys(val).length;
-        if (typeof val === 'string') return val.length;
-        return 0;
-    }
-
-    // Handle Built-in: ?has_content
-    if (expr.endsWith('?has_content')) {
-        const variable = expr.replace('?has_content', '').trim();
-        const val = resolveVariable(variable, context);
-        if (val === null || val === undefined) return false;
-        if (typeof val === 'string' || Array.isArray(val)) return val.length > 0;
-        if (typeof val === 'object') return Object.keys(val).length > 0;
-        return true;
-    }
-
-    // Handle Existence: ?? 
-    // Example: replies.age??
+    // Handle Existence: ?? (Special case: check at end, treat as boolean result)
     if (expr.endsWith('??')) {
         const variable = expr.replace('??', '').trim();
-        // Don't simplify 'resolveVariable' returns null/undefined as missing
         const val = resolveVariable(variable, context);
         return val !== null && val !== undefined;
+    }
+
+    // Handle Built-in Chain (anything with ?)
+    if (expr.includes('?')) {
+        const parts = splitByTopLevel(expr, '?');
+        if (parts.length > 1) {
+            let val = evaluateExpression(parts[0], context);
+
+            for (let i = 1; i < parts.length; i++) {
+                const part = parts[i].trim();
+
+                // ?string
+                if (part === 'string') {
+                    val = val ? String(val) : "";
+                    continue;
+                }
+
+                // ?size
+                if (part === 'size') {
+                    if (Array.isArray(val)) val = val.length;
+                    else if (typeof val === 'object' && val !== null) val = Object.keys(val).length;
+                    else if (typeof val === 'string') val = val.length;
+                    else val = 0;
+                    continue;
+                }
+
+                // ?has_content
+                if (part === 'has_content') {
+                    if (val === null || val === undefined) val = false;
+                    else if (typeof val === 'string' || Array.isArray(val)) val = val.length > 0;
+                    else if (typeof val === 'object') val = Object.keys(val).length > 0;
+                    else val = true;
+                    continue;
+                }
+
+                // ?join('sep')
+                if (part.startsWith('join(') && part.endsWith(')')) {
+                    if (Array.isArray(val)) {
+                        const content = part.substring(5, part.length - 1);
+                        let separator = ',';
+                        if ((content.startsWith("'") && content.endsWith("'")) ||
+                            (content.startsWith('"') && content.endsWith('"'))) {
+                            separator = content.substring(1, content.length - 1);
+                        }
+                        val = val.join(separator);
+                    }
+                    continue;
+                }
+
+                // ?split('sep')
+                if (part.startsWith('split(') && part.endsWith(')')) {
+                    if (typeof val === 'string') {
+                        const content = part.substring(6, part.length - 1);
+                        let separator = ',';
+                        if ((content.startsWith("'") && content.endsWith("'")) ||
+                            (content.startsWith('"') && content.endsWith('"'))) {
+                            separator = content.substring(1, content.length - 1);
+                        }
+                        val = val.split(separator);
+                    }
+                    continue;
+                }
+
+                // ?map(x -> ...)
+                if (part.startsWith('map(') && part.endsWith(')')) {
+                    if (Array.isArray(val)) {
+                        const argsContent = part.substring(4, part.length - 1);
+                        if (argsContent.includes('->')) {
+                            const [varName, body] = argsContent.split('->').map(s => s.trim());
+                            val = val.map(item => {
+                                const mappedContext = { ...context, [varName]: item };
+                                return evaluateExpression(body, mappedContext);
+                            });
+                        }
+                    }
+                    continue;
+                }
+            }
+            return val;
+        }
     }
 
     // Literals
@@ -200,6 +304,8 @@ const splitByTopLevel = (str, delimiter) => {
     let parts = [];
     let current = '';
     let parenthesisLevel = 0;
+    let braceLevel = 0;
+    let bracketLevel = 0;
     let quote = null;
 
     for (let i = 0; i < str.length; i++) {
@@ -211,15 +317,22 @@ const splitByTopLevel = (str, delimiter) => {
             else if (!quote) quote = char;
         }
 
-        // Handle parentheses
+        // Handle parentheses and other brackets
         if (!quote) {
             if (char === '(') parenthesisLevel++;
             else if (char === ')') parenthesisLevel--;
+            else if (char === '{') braceLevel++;
+            else if (char === '}') braceLevel--;
+            else if (char === '[') bracketLevel++;
+            else if (char === ']') bracketLevel--;
         }
 
         // Check for delimiter
-        // Need to check substring if delimiter length > 1
-        const isDelimiter = !quote && parenthesisLevel === 0 && str.substring(i, i + delimiter.length) === delimiter;
+        const isDelimiter = !quote &&
+            parenthesisLevel === 0 &&
+            braceLevel === 0 &&
+            bracketLevel === 0 &&
+            str.substring(i, i + delimiter.length) === delimiter;
 
         if (isDelimiter) {
             parts.push(current);

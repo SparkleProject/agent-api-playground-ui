@@ -127,14 +127,13 @@ function App() {
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-hidden">
-              {activeTab === 'simulator' ? (
+            <div className="flex-1 overflow-hidden relative">
+              <div className={`absolute inset-0 bg-background ${activeTab === 'simulator' ? 'block' : 'hidden'}`}>
                 <WorkflowSimulator workflow={workflow} />
-                // <div className="p-4">Simulator Disabled for Debugging</div>
-              ) : (
+              </div>
+              <div className={`absolute inset-0 bg-background ${activeTab === 'graph' ? 'block' : 'hidden'}`}>
                 <WorkflowGraph workflow={workflow} />
-                // <div className="p-4">Graph Disabled for Debugging</div>
-              )}
+              </div>
             </div>
           </div>
         )}

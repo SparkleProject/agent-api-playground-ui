@@ -167,8 +167,12 @@ export default function WorkflowSimulator({ workflow }) {
     const [apiNameInput, setApiNameInput] = useState('');
 
     // Update mock response default and api name when stepping into API call
+    // Update mock response default and api name when stepping into API call
+    // AND Re-hydrate inputs if we have visited this step before (e.g. Back button)
     useEffect(() => {
-        if (currentStep?.type === 'api_call') {
+        if (!currentStep) return;
+
+        if (currentStep.type === 'api_call') {
             const defaultMock = {
                 status: "success",
                 data: "Mock Data",
@@ -182,42 +186,45 @@ export default function WorkflowSimulator({ workflow }) {
             const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
             setApiNameInput(rawName.replace(/\s+/g, '_').toLowerCase());
         }
-    }, [currentStep]);
+
+        if (currentStep.type === 'user_interaction' && currentStep.fields) {
+            const restoredInputs = {};
+            currentStep.fields.forEach(field => {
+                // Check if we have a saved reply for this field
+                if (context.replies[field.name] !== undefined) {
+                    restoredInputs[field.name] = context.replies[field.name];
+                }
+            });
+            setCurrentInputs(restoredInputs);
+        }
+    }, [currentStep, context.replies]); // Add context.replies dependency
 
     const handleNext = async () => {
         if (!currentStep) return;
 
-        // Snapshot for history
-        const snapshot = {
-            stack: JSON.parse(JSON.stringify(executionStack)),
-            context: JSON.parse(JSON.stringify(context))
-        };
-        setHistory([...history, snapshot]);
+        let nextContext = JSON.parse(JSON.stringify(context));
 
+        // 1. Handle User Interaction
         if (currentStep.type === 'user_interaction' && currentStep.fields) {
-            // Validate & Save Inputs
-            const newReplies = { ...context.replies };
-
-            // We should ideally check required fields here
+            // Check required fields
             const missingRequired = currentStep.fields.some(f =>
                 !f.attributes?.optional && !currentInputs[f.name] && currentInputs[f.name] !== 0
             );
 
             if (missingRequired) {
-                alert("Please fill in all required fields."); // Simple validation for now
-                setHistory([...history]); // Revert history add
+                alert("Please fill in all required fields.");
                 return;
             }
 
+            // Update nextContext with inputs
             currentStep.fields.forEach(field => {
                 if (currentInputs[field.name] !== undefined) {
-                    newReplies[field.name] = currentInputs[field.name];
+                    nextContext.replies[field.name] = currentInputs[field.name];
                 }
             });
-
-            setContext(prev => ({ ...prev, replies: newReplies }));
         }
 
+        // 2. Handle API Call
         if (currentStep.type === 'api_call') {
             setIsSimulatingApi(true);
             // Mock API Delay
@@ -230,36 +237,51 @@ export default function WorkflowSimulator({ workflow }) {
             } catch (e) {
                 alert("Invalid JSON in mock response editor!");
                 setIsSimulatingApi(false);
-                setHistory([...history]); // Revert
                 return;
             }
 
             const apiName = apiNameInput || 'unknown_api';
-
-            setContext(prev => ({
-                ...prev,
-                api_responses: {
-                    ...prev.api_responses,
-                    [apiName]: parsedResponse
-                }
-            }));
+            nextContext.api_responses[apiName] = parsedResponse;
             setIsSimulatingApi(false);
         }
 
-        // Advance Pointer
+        // 3. Save History (Snapshot current stack + UPDATED context)
+        // This ensures that going 'back' returns to this step WITH the data we just saved.
+        const snapshot = {
+            stack: JSON.parse(JSON.stringify(executionStack)),
+            context: nextContext
+        };
+        setHistory([...history, snapshot]);
+
+        // 4. Update State and Advance
+        setContext(nextContext);
+
         const newStack = [...executionStack];
         newStack[newStack.length - 1].index++;
         setExecutionStack(newStack);
-        setCurrentInputs({});
+        // Do NOT manually clear currentInputs here, the useEffect will handle it
     };
 
     const handleBack = () => {
         if (history.length > 0) {
             const prevState = history[history.length - 1];
+
+            // Merge current inputs into the PREVIOUS state context to preserve "future" data
+            // This ensures if we go forward again, we remember what was typed.
+            let contextToRestore = JSON.parse(JSON.stringify(prevState.context));
+
+            if (currentStep && currentStep.type === 'user_interaction' && currentStep.fields) {
+                currentStep.fields.forEach(field => {
+                    if (currentInputs[field.name] !== undefined) {
+                        contextToRestore.replies[field.name] = currentInputs[field.name];
+                    }
+                });
+            }
+
             setExecutionStack(prevState.stack);
-            setContext(prevState.context);
+            setContext(contextToRestore);
             setHistory(history.slice(0, -1));
-            setCurrentInputs({});
+            // Do NOT manually clear currentInputs here, the useEffect will restore it from context
         }
     };
 
@@ -294,11 +316,41 @@ export default function WorkflowSimulator({ workflow }) {
         let options = [];
         if (field.attributes?.options) {
             const result = evaluateExpression(field.attributes.options, context);
-            if (Array.isArray(result)) options = result;
+            if (Array.isArray(result)) {
+                options = result.map(opt => {
+                    if (typeof opt === 'string' || typeof opt === 'number') {
+                        return { label: String(opt), value: String(opt) };
+                    }
+                    return opt;
+                });
+            }
             // Handle simple string fallback if expression fails
             else if (typeof field.attributes.options === 'string' && field.attributes.options.startsWith('[')) {
-                try { options = JSON.parse(field.attributes.options); } catch (e) { }
+                try {
+                    const parsed = JSON.parse(field.attributes.options);
+                    options = parsed.map(opt => {
+                        if (typeof opt === 'string' || typeof opt === 'number') {
+                            return { label: String(opt), value: String(opt) };
+                        }
+                        return opt;
+                    });
+                } catch (e) { }
             }
+        }
+
+        // Apply label_expression if present (e.g. "$.label")
+        if (field.attributes?.label_expression && typeof field.attributes.label_expression === 'string' && field.attributes.label_expression.startsWith('$.') && options.length > 0) {
+            const labelKey = field.attributes.label_expression.substring(2);
+            options = options.map(opt => {
+                if (typeof opt === 'object' && opt !== null) {
+                    const extractedLabel = opt[labelKey];
+                    // Use extracted label if found, otherwise keep existing or fallback
+                    if (extractedLabel !== undefined) {
+                        return { ...opt, label: extractedLabel };
+                    }
+                }
+                return opt;
+            });
         }
 
         switch (field.type) {
@@ -429,7 +481,7 @@ export default function WorkflowSimulator({ workflow }) {
                 {/* Step Content */}
                 {currentStep.type === 'user_interaction' && (
                     <>
-                        <div className="mb-6 prose prose-invert max-w-none">
+                        <div className="mb-6 prose prose-invert max-w-none prose-headings:text-lg prose-p:text-sm">
                             <ErrorBoundary fallback={<div className="text-red-400">Error rendering prompt</div>}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {extractPrompt(currentStep.prompt) || ''}

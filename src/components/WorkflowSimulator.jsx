@@ -216,52 +216,24 @@ export default function WorkflowSimulator({ workflow }) {
             const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
             setApiNameInput(cleanName);
 
-            // Smart Mocking: If we haven't generated for this step yet, try to find usage and generate
-            if (!hasGeneratedMock[currentStep.id]) {
-                const expression = findExpressionUsage(workflow, cleanName);
-
-                if (expression) {
-                    setIsGeneratingMock(true);
-                    setHasGeneratedMock(prev => ({ ...prev, [currentStep.id]: true }));
-
-                    // Call LLM to generate mock
-                    sendMessage(
-                        `create a json to match value of this freemarker expression: ${expression}`,
-                        'gpt-4.1-mini'
-                    ).then(response => {
-                        let json = response.content;
-                        // Extract JSON from code block if present
-                        if (json.includes('```json')) {
-                            json = json.split('```json')[1].split('```')[0].trim();
-                        } else if (json.includes('```')) {
-                            json = json.split('```')[1].split('```')[0].trim();
-                        }
-
-                        setMockResponse(json);
-                        setIsGeneratingMock(false);
-                    }).catch(err => {
-                        console.error("Failed to generate mock:", err);
-                        setIsGeneratingMock(false);
-                        // Fallback to default
-                        setMockResponse(JSON.stringify({ status: "error", message: "Failed to generate mock" }, null, 2));
-                    });
-                } else {
-                    // Default fallback if no expression usage found
-                    const defaultMock = {
-                        status: "success",
-                        data: "Mock Data",
-                        found: true,
-                        products: ["Speaker A", "Speaker B"]
-                    };
-                    setMockResponse(JSON.stringify(defaultMock, null, 2));
-                }
+            // Smart Mocking: Manual Trigger now, so we only set default if empty
+            // (Actually, we set default initial value if state is practically empty or just initialized)
+            if (mockResponse === '{\n  "status": "success",\n  "data": "Mock Data"\n}') {
+                const defaultMock = {
+                    status: "success",
+                    data: "Mock Data",
+                    found: true,
+                    products: ["Speaker A", "Speaker B"]
+                };
+                setMockResponse(JSON.stringify(defaultMock, null, 2));
             }
-            // If already generated or visited, we keep the current mockResponse (or it might have been reset? 
-            // Wait, mockResponse state is preserved as long as we don't unmount? 
-            // No, WorkflowSimulator stays mounted. But mockResponse is state.
-            // If we have multiple API steps, it overwrites.
-            // That's acceptable for now. 
         }
+        // If already generated or visited, we keep the current mockResponse (or it might have been reset? 
+        // Wait, mockResponse state is preserved as long as we don't unmount? 
+        // No, WorkflowSimulator stays mounted. But mockResponse is state.
+        // If we have multiple API steps, it overwrites.
+        // That's acceptable for now. 
+
 
 
         if (currentStep.type === 'user_interaction' && currentStep.fields) {
@@ -375,6 +347,42 @@ export default function WorkflowSimulator({ workflow }) {
                 return { ...prev, [fieldName]: current.filter(v => v !== value) };
             }
         });
+    };
+
+    const handleGenerateMock = () => {
+        if (!currentStep) return;
+
+        setIsGeneratingMock(true);
+        const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
+        const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
+
+        const expression = findExpressionUsage(workflow, cleanName);
+
+        // If no expression found, we can still ask LLM to generate a generic mock for this API name
+        const prompt = expression
+            ? `create a json to match value of this freemarker expression: ${expression}`
+            : `create a realistic json response for an API named "${currentStep.api_name || 'unknown'}"`;
+
+        const logPayload = { model: 'gpt-4.1-mini', message: prompt };
+        setDebugLogs(prev => [...prev, `[Mock Gen] Invoking Chat Endpoint. Payload: ${JSON.stringify(logPayload)}`]);
+
+        sendMessage(prompt, 'gpt-4.1-mini')
+            .then(response => {
+                let json = response.content;
+                // Extract JSON from code block if present
+                if (json.includes('```json')) {
+                    json = json.split('```json')[1].split('```')[0].trim();
+                } else if (json.includes('```')) {
+                    json = json.split('```')[1].split('```')[0].trim();
+                }
+                setMockResponse(json);
+                setIsGeneratingMock(false);
+            })
+            .catch(err => {
+                console.error("Failed to generate mock:", err);
+                setIsGeneratingMock(false);
+                alert("Failed to generate mock. See console for details.");
+            });
     };
 
     // Render Field Helper
@@ -572,6 +580,7 @@ export default function WorkflowSimulator({ workflow }) {
                 {currentStep.type === 'api_call' && (
                     <div className="flex flex-col gap-4 p-6 border-2 border-dashed border-border rounded-lg bg-secondary/20">
                         <div className="flex items-center justify-between">
+
                             <div className="flex flex-col flex-1 mr-4">
                                 <label className="text-[10px] text-muted-foreground font-mono mb-1">Response Variable Name:</label>
                                 <input
@@ -580,22 +589,32 @@ export default function WorkflowSimulator({ workflow }) {
                                     onChange={(e) => setApiNameInput(e.target.value)}
                                     className="bg-background border border-border rounded px-2 py-1 text-sm font-mono text-green-400 focus:outline-none focus:border-primary"
                                 />
-                                <div className="text-[10px] text-muted-foreground font-mono mt-1">
-                                    Access via: api_responses.{apiNameInput}
-                                </div>
                             </div>
-                            <div className="text-xs text-muted-foreground bg-background px-2 py-1 rounded border border-border h-fit">
-                                Mock Response Editor
+                            <div className="flex flex-col flex-1">
+                                <label className="text-[10px] text-muted-foreground font-mono mb-1">API Name:</label>
+                                <div className="bg-background border border-border rounded px-2 py-1 text-sm font-mono text-green-400 truncate">
+                                    {currentStep.api_name || 'N/A'}
+                                </div>
                             </div>
                         </div>
 
                         <div className="text-xs text-muted-foreground mb-2 flex items-center justify-between">
-                            <span>Edit JSON response to simulate different scenarios:</span>
-                            {isGeneratingMock && (
-                                <span className="flex items-center text-primary animate-pulse">
-                                    <Sparkles className="w-3 h-3 mr-1" /> Generating smart mock...
-                                </span>
-                            )}
+                            <span className="font-semibold text-foreground">Mock Response Editor:</span>
+                            <div className="flex items-center gap-2">
+                                {isGeneratingMock ? (
+                                    <span className="flex items-center text-primary animate-pulse">
+                                        <Sparkles className="w-3 h-3 mr-1" /> Generating...
+                                    </span>
+                                ) : (
+                                    <button
+                                        onClick={handleGenerateMock}
+                                        className="flex items-center text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-2 py-1 rounded transition-colors"
+                                        title="Auto-generate mock JSON based on workflow usage"
+                                    >
+                                        <Sparkles className="w-3 h-3 mr-1" /> Generate Mock Response
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         <textarea
                             value={mockResponse}

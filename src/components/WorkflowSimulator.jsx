@@ -252,12 +252,12 @@ export default function WorkflowSimulator({ workflow }) {
         // 1. Handle User Interaction
         if (currentStep.type === 'user_interaction' && currentStep.fields) {
             // Check required fields
-            const missingRequired = currentStep.fields.some(f =>
-                !f.attributes?.optional && !currentInputs[f.name] && currentInputs[f.name] !== 0
-            );
+            const missingFields = currentStep.fields
+                .filter(f => !f.attributes?.optional && !currentInputs[f.name] && currentInputs[f.name] !== 0)
+                .map(f => f.name.replace(/_/g, ' '));
 
-            if (missingRequired) {
-                alert("Please fill in all required fields.");
+            if (missingFields.length > 0) {
+                alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
                 return;
             }
 
@@ -425,7 +425,6 @@ export default function WorkflowSimulator({ workflow }) {
             options = options.map(opt => {
                 if (typeof opt === 'object' && opt !== null) {
                     const extractedLabel = opt[labelKey];
-                    // Use extracted label if found, otherwise keep existing or fallback
                     if (extractedLabel !== undefined) {
                         return { ...opt, label: extractedLabel };
                     }
@@ -433,6 +432,20 @@ export default function WorkflowSimulator({ workflow }) {
                 return opt;
             });
         }
+
+        // Ensure every option has a value and label
+        options = options.map((opt, idx) => {
+            if (typeof opt !== 'object' || opt === null) {
+                return { label: String(opt), value: String(opt) };
+            }
+
+            // Fallback for value: value -> id -> code -> key -> index
+            const value = opt.value ?? opt.id ?? opt.code ?? opt.key ?? String(idx);
+            // Fallback for label: label -> name -> title -> value
+            const label = opt.label ?? opt.name ?? opt.title ?? String(value);
+
+            return { ...opt, label: String(label), value: String(value) };
+        });
 
         switch (field.type) {
             case 'text':
